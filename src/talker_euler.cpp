@@ -3,9 +3,9 @@
 #include <iostream>
 #include <thread>
 
-class Talker : public rclcpp::Node {
+class Talker_euler : public rclcpp::Node {
 public:
-    Talker() : Node("talker") {
+    Talker_euler() : Node("talker_euler") {
         publisher_ = this->create_publisher<geometry_msgs::msg::Vector3>("euler_angles", 10);
 
         input_thread_ = std::thread([this]() {
@@ -28,7 +28,7 @@ public:
         });
     }
 
-    ~Talker() {
+    ~Talker_euler() {
         if (input_thread_.joinable())
             input_thread_.join();
     }
@@ -40,7 +40,7 @@ private:
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<Talker>());
+    rclcpp::spin(std::make_shared<Talker_euler>());
     rclcpp::shutdown();
     return 0;
 }

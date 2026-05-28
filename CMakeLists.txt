@@ -11,8 +11,11 @@ find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
-add_executable(talker src/talker.cpp)
-ament_target_dependencies(talker rclcpp geometry_msgs)
+add_executable(talker_euler src/talker_euler.cpp)
+ament_target_dependencies(talker_euler rclcpp geometry_msgs)
+
+add_executable(talker_quaternion src/talker_quaternion.cpp)
+ament_target_dependencies(talker_quaternion rclcpp geometry_msgs)
 
 add_executable(listener_serial src/listener_serial.cpp)
 ament_target_dependencies(listener_serial rclcpp geometry_msgs)
@@ -22,7 +25,7 @@ add_executable(listener_parallel src/listener_serial.cpp)
 ament_target_dependencies(listener_parallel rclcpp geometry_msgs)
 target_link_libraries(listener_parallel ${Boost_LIBRARIES})
 
-install(TARGETS talker listener
+install(TARGETS talker_euler talker_quaternion listener_serial listener_parallel
     DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -95,10 +95,10 @@ private:
     double motor_angle_;
 };
 
-class Listener : public rclcpp::Node
+class Listener_parallel : public rclcpp::Node
 {
 public:
-    Listener() : Node("listener"), io_(), serial_(io_)
+    Listener_parallel() : Node("listener_parallel"), io_(), serial_(io_)
     {
         // Open serial port
         serial_.open("/dev/ttyACM0"); // Change to your Arduino's port
@@ -108,15 +108,7 @@ public:
             "euler_angles", 10,
             [this](const geometry_msgs::msg::Vector3::SharedPtr msg)
             {
-                RCLCPP_INFO(this->get_logger(), "Heard roll: %.2f  pitch: %.2f  yaw: %.2f",
-                            msg->x, msg->y, msg->z);
-                // Format and send over serial (4 bytes: roll, pitch, yaw, 181)
-                uint8_t data[4];
-                data[0] = (uint8_t)std::clamp((int)msg->x, 0, 180); // roll
-                data[1] = (uint8_t)std::clamp((int)msg->y, 0, 180); // pitch
-                data[2] = (uint8_t)std::clamp((int)msg->z, 0, 180); // yaw
-                data[3] = 181;                                      // end byte
-                boost::asio::write(serial_, boost::asio::buffer(data, 4));
+                
             });
     }
 
@@ -129,7 +121,23 @@ private:
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<Listener>());
+    rclcpp::spin(std::make_shared<Listener_parallel>());
     rclcpp::shutdown();
     return 0;
+}
+
+std::pair<double, double> quaternionToTiltPan(const geometry_msgs::msg::Quaternion& q) {
+    // ROS quaternion is (x, y, z, w)
+    double x = q.x, y = q.y, z = q.z, w = q.w;
+
+    // Rotate up-vector (0, 0, 1) by quaternion: v' = q * v * q^-1
+    // Unrolled for v = (0, 0, 1) — third column of the rotation matrix
+    double rx = 2.0 * (x*z + w*y);         // was: 2(xz + wy)
+    double ry = 2.0 * (y*z - w*x);         // was: 2(yz − wx)
+    double rz = 1.0 - 2.0 * (x*x + y*y);  // was: 1 − 2(x² + y²)
+
+    double tilt = std::acos(std::clamp(rz, -1.0, 1.0));
+    double pan  = -std::atan2(rx, ry) + M_PI;
+
+    return { tilt, pan };
 }

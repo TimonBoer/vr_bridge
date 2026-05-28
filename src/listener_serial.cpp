@@ -4,10 +4,10 @@
 #include <string>
 #include <algorithm>
 
-class Listener : public rclcpp::Node
+class Listener_serial : public rclcpp::Node
 {
 public:
-    Listener() : Node("listener"), io_(), serial_(io_)
+    Listener_serial() : Node("listener_serial"), io_(), serial_(io_)
     {
         // Open serial port
         serial_.open("/dev/ttyACM0"); // Change to your Arduino's port
@@ -38,7 +38,7 @@ private:
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<Listener>());
+    rclcpp::spin(std::make_shared<Listener_serial>());
     rclcpp::shutdown();
     return 0;
 }
