@@ -21,7 +21,7 @@ add_executable(listener_serial src/listener_serial.cpp)
 ament_target_dependencies(listener_serial rclcpp geometry_msgs)
 target_link_libraries(listener_serial ${Boost_LIBRARIES})
 
-add_executable(listener_parallel src/listener_serial.cpp)
+add_executable(listener_parallel src/listener_parallel.cpp)
 ament_target_dependencies(listener_parallel rclcpp geometry_msgs)
 target_link_libraries(listener_parallel ${Boost_LIBRARIES})
 
