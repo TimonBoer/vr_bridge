@@ -100,20 +100,24 @@ class Listener_parallel : public rclcpp::Node
 public:
     Listener_parallel() : Node("listener_parallel"), io_(), serial_(io_)
     {
-        // Open serial port
-        serial_.open("/dev/ttyACM0"); // Change to your Arduino's port
+        serial_.open("/dev/ttyACM0");
         serial_.set_option(boost::asio::serial_port_base::baud_rate(9600));
 
-        subscription_ = this->create_subscription<geometry_msgs::msg::Vector3>(
-            "euler_angles", 10,
-            [this](const geometry_msgs::msg::Vector3::SharedPtr msg)
+        subscription_ = this->create_subscription<geometry_msgs::msg::Quaternion>(
+            "orientation", 10,
+            [this](const geometry_msgs::msg::Quaternion::SharedPtr msg)
             {
+                auto [tilt, pan] = quaternionToTiltPan(*msg);
+
+                RCLCPP_INFO(this->get_logger(),
+                    "tilt: %.4f  pan: %.4f", tilt, pan);
+
                 
             });
     }
 
 private:
-    rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr subscription_;
+    rclcpp::Subscription<geometry_msgs::msg::Quaternion>::SharedPtr subscription_;
     boost::asio::io_service io_;
     boost::asio::serial_port serial_;
 };
