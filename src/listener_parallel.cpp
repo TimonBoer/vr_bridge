@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/quaternion.hpp>
+#include <geometry_msgs/msg/quaternion_stamped.hpp>
 #include <boost/asio.hpp>
 #include <string>
 #include <algorithm>
@@ -77,15 +77,13 @@ void printVector3(const tf2::Vector3 v, const rclcpp::Logger &logger)
     RCLCPP_INFO(logger, "(%f, %f, %f)", v.x(), v.y(), v.z());
 }
 
-std::tuple<double, double, double> quaternionToTiltPanYaw(const geometry_msgs::msg::Quaternion &q_msg, const rclcpp::Logger &logger)
+std::tuple<double, double, double> quaternionToTiltPanYaw(const geometry_msgs::msg::QuaternionStamped::SharedPtr q_msg, const rclcpp::Logger &logger)
 {
     tf2::Quaternion q;
-    tf2::fromMsg(q_msg, q);
+    tf2::fromMsg(q_msg->quaternion, q);
 
     // get normal vector by applying rotation to vector pointing up (0, 0, 1)
     tf2::Vector3 v_norm = quatRotate(q, tf2::Vector3(0, 0, 1));
-
-    // printVector3(v_norm, logger);
 
     double tilt = acos(v_norm.z());
     double pan = -atan2(v_norm.x(), v_norm.y()) + M_PI;
@@ -107,72 +105,77 @@ std::tuple<double, double, double> quaternionToTiltPanYaw(const geometry_msgs::m
     tf2::Vector3 cross = expected_forward.cross(v_forward);
     if (cross.dot(v_norm) < 0) yaw = -yaw;
 
-    printVector3(v_forward, logger);
-    printVector3(expected_forward, logger);
-
     return {tilt, pan, yaw};
 }
 
-void sendMotorAngles(const std::vector<Rope> &ropes,
-                     boost::asio::serial_port &serial,
-                     const rclcpp::Logger &logger)
-{
-    std::vector<uint8_t> motor_angles;
-    motor_angles.reserve(ropes.size() + 1);
-
-    for (const auto &rope : ropes)
-    {
-        uint8_t angle = static_cast<uint8_t>(std::clamp(rope.getMotorAngle(), 0.0, 180.0));
-        motor_angles.push_back(angle);
-        // RCLCPP_INFO(logger, "Motor angle: %d", angle);
-    }
-
-    motor_angles.push_back(181); // terminator byte
-    // boost::asio::write(serial, boost::asio::buffer(motor_angles));
-}
-
-class Listener_parallel : public rclcpp::Node
+class ListenerParallel : public rclcpp::Node
 {
 public:
-    Listener_parallel() : Node("listener_parallel"), io_(), serial_(io_),
-                          ropes_({
-                              Rope(0, 90 + TIGHTNESS),         // left
-                              Rope(M_PI, 95 + TIGHTNESS),      // right
-                              Rope(M_PI / 2, 95 + TIGHTNESS),  // front
-                              Rope(-M_PI / 2, 90 + TIGHTNESS), // back
-                          })
+    ListenerParallel() : Node("listener_parallel"), io_(), serial_(io_),
+                         ropes_({
+                             Rope(0, 90 + TIGHTNESS),         // left
+                             Rope(M_PI, 95 + TIGHTNESS),      // right
+                             Rope(M_PI / 2, 95 + TIGHTNESS),  // front
+                             Rope(-M_PI / 2, 90 + TIGHTNESS), // back
+                         })
     {
-        // serial_.open("/dev/ttyACM0");
-        // serial_.set_option(boost::asio::serial_port_base::baud_rate(9600));
+        try
+        {
+            serial_.open("/dev/ttyACM0");
+            serial_.set_option(boost::asio::serial_port_base::baud_rate(9600));
+            serial_connected_ = true;
+        }
+        catch (const std::exception &e)
+        {
+            serial_connected_ = false;
+            RCLCPP_WARN(this->get_logger(), "Arduino not connected — logging only");
+        }
 
-        subscription_ = this->create_subscription<geometry_msgs::msg::Quaternion>(
+        subscription_ = this->create_subscription<geometry_msgs::msg::QuaternionStamped>(
             "orientation", 10,
-            [this](const geometry_msgs::msg::Quaternion::SharedPtr msg)
+            [this](const geometry_msgs::msg::QuaternionStamped::SharedPtr msg)
             {
-                auto [tilt, pan, yaw] = quaternionToTiltPanYaw(*msg, this->get_logger());
-                constexpr double RAD_TO_DEG = 180.0 / M_PI;
-                RCLCPP_INFO(this->get_logger(), "tilt: %.4f  pan: %.4f, yaw: %.4f", tilt * RAD_TO_DEG, pan * RAD_TO_DEG, yaw * RAD_TO_DEG);
+                auto [tilt, pan, yaw] = quaternionToTiltPanYaw(msg, this->get_logger());
+                RCLCPP_INFO(this->get_logger(), "tilt: %.4f  pan: %.4f, yaw: %.4f", tilt, pan, yaw);
 
                 for (auto &rope : ropes_)
                     rope.update(tilt, pan);
 
-                // sendMotorAngles(ropes_, serial_, this->get_logger());
+                sendMotorAngles();
             });
     }
 
 private:
-    static constexpr int TIGHTNESS = 10;
+    static constexpr int TIGHTNESS = 5;
 
-    rclcpp::Subscription<geometry_msgs::msg::Quaternion>::SharedPtr subscription_;
+    rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::SharedPtr subscription_;
     boost::asio::io_service io_;
     boost::asio::serial_port serial_;
     std::vector<Rope> ropes_;
+    bool serial_connected_ = false;
+    
+    void sendMotorAngles()
+    {
+        std::vector<uint8_t> motor_angles;
+        motor_angles.reserve(ropes_.size() + 1);
+
+        for (const auto& rope : ropes_)
+        {
+            uint8_t angle = static_cast<uint8_t>(std::clamp(rope.getMotorAngle(), 0.0, 180.0));
+            motor_angles.push_back(angle);
+            RCLCPP_INFO(this->get_logger(), "Motor angle: %d", angle);
+        }
+
+        motor_angles.push_back(181);
+        if (serial_connected_)
+            boost::asio::write(serial_, boost::asio::buffer(motor_angles));
+    }
 };
 
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<Listener_parallel>());
+    rclcpp::spin(std::make_shared<ListenerParallel>());
     rclcpp::shutdown();
     return 0;
 }
