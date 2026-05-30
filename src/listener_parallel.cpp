@@ -100,9 +100,12 @@ std::tuple<double, double, double> quaternionToTiltPanYaw(const geometry_msgs::m
     // rotating vector (1, 0, 0) results in the vector with 0 yaw
     tf2::Vector3 expected_forward = quatRotate(tilt_pan_rot, tf2::Vector3(1, 0, 0));
 
-    // calculate angle between expected forward and actual forward vector. While keeping direction.
+    // calculate angle between expected forward and actual forward vector.
+    double yaw = std::acos(std::clamp(v_forward.dot(expected_forward), -1.0, 1.0));
+
+    // determine the sign of the yaw angle by checking the direction of the cross product
     tf2::Vector3 cross = expected_forward.cross(v_forward);
-    double yaw = std::atan2(cross.dot(v_norm), v_forward.dot(expected_forward));
+    if (cross.dot(v_norm) < 0) yaw = -yaw;
 
     printVector3(v_forward, logger);
     printVector3(expected_forward, logger);

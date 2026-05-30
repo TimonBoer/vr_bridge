@@ -71,7 +71,7 @@ def main():
         on_publish()
 
     for axis, (var, _) in sliders.items():
-        var.trace_add('write', on_slider_change)
+        var.trace_add('write', lambda *_: on_slider_change())
 
     tk.Button(root, text="Publish", command=on_publish,
               bg='#4CAF50', fg='white', padx=20).grid(row=3, column=1, pady=12)
