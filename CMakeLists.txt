@@ -47,8 +47,9 @@ install(TARGETS talker_euler talker_quaternion listener_serial listener_parallel
 
 # Python scripts installed separately
 install(PROGRAMS
-    src/imu_talker_gui.py
-    src/movella_dot_talker.py
+    src/talker_gui_rpy.py
+    src/talker_gui_tilt_pan_yaw.py
+    src/talker_movella_dot.py
     DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
