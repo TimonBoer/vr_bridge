@@ -11,9 +11,10 @@ import threading
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import QuaternionStamped
+from scipy.spatial.transform import Rotation
 
 # ── Replace this with your DOT's Bluetooth MAC address ────────────────────────
-DOT_ADDRESS = "XX:XX:XX:XX:XX:XX"
+DOT_ADDRESS = "D4:22:CD:00:05:5E"
 
 # ── BLE UUIDs from Movella DOT BLE Service Specification ─────────────────────
 CONTROL_CHARACTERISTIC   = "15172001-4947-11e9-8646-d663bd873d93"
@@ -24,6 +25,8 @@ SHORT_PAYLOAD_NOTIFY     = "15172004-4947-11e9-8646-d663bd873d93"
 START_ORIENTATION_QUAT = bytes([0x01, 0x01, 0x05])
 STOP_MEASUREMENT       = bytes([0x01, 0x00, 0x00])
 
+Z_ROTATION = float(input("Enter Z-axis rotation in degrees: ")) / 180 * 3.14159  # Align DOT's X forward with ROS's X forward
+
 
 class MovellaDotTalker(Node):
 
@@ -33,7 +36,7 @@ class MovellaDotTalker(Node):
         self.declare_parameter('frame_id', 'imu_link')
         self.frame_id = self.get_parameter('frame_id').get_parameter_value().string_value
 
-        self.pub = self.create_publisher(QuaternionStamped, 'imu/orientation', 10)
+        self.pub = self.create_publisher(QuaternionStamped, 'orientation', 10)
 
         # Run the bleak BLE loop in a background thread
         self._loop = asyncio.new_event_loop()
@@ -42,31 +45,43 @@ class MovellaDotTalker(Node):
 
         self.get_logger().info(f'Connecting to DOT at {DOT_ADDRESS} ...')
 
+        self._stop_event = asyncio.Event()  # To signal the BLE loop to stop on shutdown
+        self.stopping = False
+
     # ── BLE thread ────────────────────────────────────────────────────────────
     def _run_ble(self):
         self._loop.run_until_complete(self._ble_loop())
 
     async def _ble_loop(self):
-        from bleak import BleakClient # type: ignore
+        from bleak import BleakClient
 
         async with BleakClient(DOT_ADDRESS) as client:
             self.get_logger().info('Connected to Movella DOT')
+            await asyncio.sleep(1.0)
 
-            # Subscribe to quaternion notifications
+            await client.write_gatt_char(CONTROL_CHARACTERISTIC, STOP_MEASUREMENT)
+            await asyncio.sleep(0.5)
+
             await client.start_notify(SHORT_PAYLOAD_NOTIFY, self._on_packet)
-
-            # Start measurement in orientation quaternion mode
             await client.write_gatt_char(CONTROL_CHARACTERISTIC, START_ORIENTATION_QUAT)
 
-            # Keep running until ROS shuts down
-            while rclpy.ok():
-                await asyncio.sleep(0.1)
+            try:
+                # Wait until stop is requested
+                await self._stop_event.wait()
+            finally:
+                self.get_logger().info('Stopping measurement...')
+                await client.write_gatt_char(CONTROL_CHARACTERISTIC, STOP_MEASUREMENT)
+                await asyncio.sleep(0.3)
 
-            # Stop measurement cleanly
-            await client.write_gatt_char(CONTROL_CHARACTERISTIC, STOP_MEASUREMENT)
+    def stop_ble(self):
+        self.stopping = True
+        # Called from the main thread to trigger clean shutdown
+        self._loop.call_soon_threadsafe(self._stop_event.set)
 
     # ── Packet parser ─────────────────────────────────────────────────────────
     def _on_packet(self, sender, data: bytearray):
+        if self.stopping:
+            return  # Ignore packets received during shutdown
         # Short payload (mode 5 — Orientation Quaternion) is 20 bytes:
         # [0..3]  timestamp (uint32, ms)
         # [4..7]  w (float32)
@@ -78,6 +93,11 @@ class MovellaDotTalker(Node):
 
         _, w, x, y, z = struct.unpack_from('<Iffff', data, 0)
 
+        # Apply Z-axis rotation to align with ROS convention
+        r = Rotation.from_quat([x, y, z, w])
+        r = r * Rotation.from_euler('z', Z_ROTATION)
+        x, y, z, w = r.as_quat()
+
         msg = QuaternionStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.frame_id
@@ -86,7 +106,10 @@ class MovellaDotTalker(Node):
         msg.quaternion.y = y
         msg.quaternion.z = z
 
+        print(f'Got DOT quaternion: w={w:.4f}, x={x:.4f}, y={y:.4f}, z={z:.4f}')
+
         self.pub.publish(msg)
+
 
 
 def main(args=None):
@@ -97,6 +120,9 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node.get_logger().info('Shutting down, stopping DOT...')
+        node.stop_ble()
+        node._thread.join(timeout=3.0)  # wait for BLE thread to finish
         node.destroy_node()
         rclpy.shutdown()
 
