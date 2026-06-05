@@ -13,6 +13,8 @@ from rclpy.node import Node
 from geometry_msgs.msg import QuaternionStamped
 from scipy.spatial.transform import Rotation
 
+import std_msgs
+
 # ── Replace this with your DOT's Bluetooth MAC address ────────────────────────
 DOT_ADDRESS = "D4:22:CD:00:05:5E"
 
@@ -25,8 +27,24 @@ SHORT_PAYLOAD_NOTIFY     = "15172004-4947-11e9-8646-d663bd873d93"
 START_ORIENTATION_QUAT = bytes([0x01, 0x01, 0x05])
 STOP_MEASUREMENT       = bytes([0x01, 0x00, 0x00])
 
-Z_ROTATION = float(input("Enter Z-axis rotation in degrees: ")) / 180 * 3.14159  # Align DOT's X forward with ROS's X forward
+class Calibrator:
 
+    def __init__(self):
+        self._ref_r = Rotation.identity()
+        self._pending = False
+
+    def request(self):
+        self._pending = True
+
+    def apply(self, x, y, z, w) -> tuple:
+        r_raw = Rotation.from_quat([x, y, z, w])  # scipy uses xyzw order
+
+        if self._pending:
+            self._ref_r = r_raw.inv()
+            self._pending = False
+
+        r_calibrated = self._ref_r * r_raw
+        return r_calibrated.as_quat()  # returns [x, y, z, w]
 
 class MovellaDotTalker(Node):
 
@@ -37,6 +55,9 @@ class MovellaDotTalker(Node):
         self.frame_id = self.get_parameter('frame_id').get_parameter_value().string_value
 
         self.pub = self.create_publisher(QuaternionStamped, 'orientation', 10)
+
+        self._calibrator = Calibrator()
+        self.create_subscription(std_msgs.msg.Empty, 'calibrate', self._on_calibrate, 10)
 
         # Run the bleak BLE loop in a background thread
         self._loop = asyncio.new_event_loop()
@@ -77,6 +98,10 @@ class MovellaDotTalker(Node):
         self.stopping = True
         # Called from the main thread to trigger clean shutdown
         self._loop.call_soon_threadsafe(self._stop_event.set)
+    
+    def _on_calibrate(self, msg):
+        self._calibrator.request()
+
 
     # ── Packet parser ─────────────────────────────────────────────────────────
     def _on_packet(self, sender, data: bytearray):
@@ -93,10 +118,9 @@ class MovellaDotTalker(Node):
 
         _, w, x, y, z = struct.unpack_from('<Iffff', data, 0)
 
-        # Apply Z-axis rotation to align with ROS convention
-        r = Rotation.from_quat([x, y, z, w])
-        r = r * Rotation.from_euler('z', Z_ROTATION)
-        x, y, z, w = r.as_quat()
+        q_calibrated = self._calibrator.apply(x, y, z, w)  # apply calibration
+
+        x, y, z, w = q_calibrated
 
         msg = QuaternionStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
