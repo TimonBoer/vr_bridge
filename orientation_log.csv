@@ -1,0 +1,2 @@
+timestamp,setpoint_tilt_deg,setpoint_pan_deg,setpoint_yaw_deg,setpoint_qx,setpoint_qy,setpoint_qz,setpoint_qw,imu_qx,imu_qy,imu_qz,imu_qw
+2026-06-22T12:16:17.542,0.0,0.0,0.0,0.000000,0.000000,0.000000,1.000000,-0.094501,0.001990,0.001744,0.995521

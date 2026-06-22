@@ -16,7 +16,7 @@ from scipy.spatial.transform import Rotation
 import std_msgs
 
 # ── Replace this with your DOT's Bluetooth MAC address ────────────────────────
-DOT_ADDRESS = "D4:22:CD:00:05:5E"
+DOT_ADDRESS = "D4:22:CD:00:05:5E" # xx:xx:xx:xx:xx:xx
 
 # ── BLE UUIDs from Movella DOT BLE Service Specification ─────────────────────
 CONTROL_CHARACTERISTIC   = "15172001-4947-11e9-8646-d663bd873d93"
