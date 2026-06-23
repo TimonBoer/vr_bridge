@@ -143,7 +143,7 @@ def main():
         var = tk.DoubleVar(value=0.0)
         entry_var = tk.StringVar(value="0")
 
-        scale = tk.Scale(root, from_=-180, to=180, resolution=0.1,
+        scale = tk.Scale(root, from_=-180, to=180, resolution=1,
                          orient=tk.HORIZONTAL, length=280, variable=var)
         scale.grid(row=i, column=1, padx=10)
 
@@ -158,7 +158,7 @@ def main():
             if _entry_updating[0]:
                 return
             _entry_updating[0] = True
-            _evar.set(f"{_var.get():.1f}")
+            _evar.set(f"{int(_var.get())}")
             _entry_updating[0] = False
 
         var.trace_add('write', _on_var_write)
@@ -173,7 +173,7 @@ def main():
                 val = max(-180.0, min(180.0, val))
                 _entry_updating[0] = True
                 _var.set(val)
-                _evar.set(f"{val:.1f}")
+                _evar.set(f"{int(val)}")
                 _entry_updating[0] = False
                 status_var.set("")
             except ValueError:
@@ -193,6 +193,9 @@ def main():
         q = node.publish_rpy(r, p, y)
         last_setpoint_q[0] = q
         status_var.set("")
+
+    for axis, (var, _) in sliders.items():
+        var.trace_add('write', lambda *_: on_slider_change())
 
     def on_save():
         tilt = sliders['tilt'][0].get()
